@@ -332,6 +332,7 @@ async def check_initramfs():
 # ── Fix actions ───────────────────────────────────────────────────────────────
 _FIX_ACTIONS = {
     "System Updates":   ("Update Now",    "omarchy-launch-floating-terminal-with-presentation omarchy-update"),
+    "Security":         ("Disable SSH",   "pkexec sh -c 'systemctl stop sshd; systemctl disable sshd'"),
     "AUR Updates":      ("Update AUR",    "omarchy-launch-floating-terminal-with-presentation yay -Syu --aur"),
     "Mirror Status":    ("Sync Mirrors",  "pkexec pacman -Sy"),
     "Pacman Log":       ("Remove Lock",   "pkexec sh -c 'rm -f /var/lib/pacman/db.lck'"),
