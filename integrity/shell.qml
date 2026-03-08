@@ -15,7 +15,8 @@ ShellRoot {
             id: grab
             windows: [win]
             active: false
-            onCleared: Qt.quit()
+            // Don't close while a fix command (e.g. pkexec dialog) has focus
+            onCleared: if (popup.fixingCheck === "") Qt.quit()
         }
         Timer {
             interval: 500
@@ -29,6 +30,7 @@ ShellRoot {
             Keys.onEscapePressed: Qt.quit()
 
             IntegrityPopup {
+                id: popup
                 anchors.fill: parent
             }
         }
