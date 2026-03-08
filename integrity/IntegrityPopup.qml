@@ -25,6 +25,7 @@ Item {
 
     property var integrityData: null
     property bool loading: true
+    property string fixingCheck: ""  // name of check currently being fixed
 
     function statusColor(s) {
         if (s === "OK")       return green
@@ -73,6 +74,25 @@ Item {
     // Integrity checks are heavy — poll every 30s
     Timer { interval: 30000; running: true; repeat: true
             onTriggered: { root.loading = true; poller.running = true } }
+
+    // ── Fix action runner ─────────────────────────────────────────────────────
+    Process {
+        id: fixRunner
+        onRunningChanged: {
+            if (!running) {
+                root.fixingCheck = ""
+                // Re-poll to reflect the fix result
+                root.loading = true
+                poller.running = true
+            }
+        }
+    }
+    function runFix(name, cmd) {
+        if (root.fixingCheck !== "") return  // already running a fix
+        root.fixingCheck = name
+        fixRunner.command = ["bash", "-c", cmd]
+        fixRunner.running = true
+    }
 
     // ── Intro animation ───────────────────────────────────────────────────────
     property real intro: 0.0
@@ -224,8 +244,13 @@ Item {
                 Repeater {
                     model: integrityData ? integrityData.checks : []
                     delegate: Rectangle {
+                        id: cardRect
+                        readonly property bool hasFix: modelData.fix_cmd !== ""
+                        readonly property bool isFixing: root.fixingCheck === modelData.name
+                        readonly property color sColor: root.statusColor(modelData.status)
+
                         width: checksGrid.cellW
-                        height: detailsCol.height + 24
+                        height: detailsCol.height + (hasFix ? 52 : 24)
                         color: root.surface0; radius: 8
 
                         // Left status stripe
@@ -234,8 +259,7 @@ Item {
                             anchors.top: parent.top; anchors.bottom: parent.bottom
                             anchors.topMargin: 4; anchors.bottomMargin: 4
                             width: 3; radius: 2
-                            color: root.statusColor(modelData.status)
-                            opacity: 0.85
+                            color: cardRect.sColor; opacity: 0.85
                         }
 
                         Column {
@@ -251,7 +275,7 @@ Item {
                                     text: root.statusIcon(modelData.status)
                                     font.family: "JetBrainsMono Nerd Font Mono"
                                     font.pixelSize: 14
-                                    color: root.statusColor(modelData.status)
+                                    color: cardRect.sColor
                                     anchors.verticalCenter: parent.verticalCenter
                                 }
                                 Text {
@@ -275,6 +299,55 @@ Item {
                                     font.pixelSize: 11; color: root.overlay0
                                     width: parent.width; elide: Text.ElideRight
                                 }
+                            }
+                        }
+
+                        // ── Fix button ────────────────────────────────────────
+                        Rectangle {
+                            visible: cardRect.hasFix
+                            anchors.left: parent.left; anchors.leftMargin: 14
+                            anchors.bottom: parent.bottom; anchors.bottomMargin: 8
+                            width: fixLabel.implicitWidth + 28
+                            height: 22; radius: 6
+                            color: cardRect.isFixing
+                                   ? Qt.rgba(cardRect.sColor.r, cardRect.sColor.g, cardRect.sColor.b, 0.25)
+                                   : Qt.rgba(cardRect.sColor.r, cardRect.sColor.g, cardRect.sColor.b, 0.12)
+                            border.color: Qt.rgba(cardRect.sColor.r, cardRect.sColor.g, cardRect.sColor.b, 0.5)
+                            border.width: 1
+
+                            Behavior on color { ColorAnimation { duration: 150 } }
+
+                            Row {
+                                anchors.centerIn: parent; spacing: 5
+
+                                Text {
+                                    text: cardRect.isFixing ? "\uf110" : "\uf0e7"
+                                    font.family: "JetBrainsMono Nerd Font Mono"
+                                    font.pixelSize: 10
+                                    color: cardRect.sColor
+                                    anchors.verticalCenter: parent.verticalCenter
+
+                                    SequentialAnimation on opacity {
+                                        running: cardRect.isFixing
+                                        loops: Animation.Infinite
+                                        NumberAnimation { to: 0.3; duration: 500 }
+                                        NumberAnimation { to: 1.0; duration: 500 }
+                                    }
+                                }
+                                Text {
+                                    id: fixLabel
+                                    text: cardRect.isFixing ? "Running…" : modelData.fix_label
+                                    font.pixelSize: 11
+                                    color: cardRect.sColor
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: root.fixingCheck === "" && !cardRect.isFixing
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.runFix(modelData.name, modelData.fix_cmd)
                             }
                         }
                     }

@@ -198,6 +198,20 @@ async def check_smart():
         return "WARNING", f"{len(issues)} disk(s) warning", issues
     return "OK", "All disks healthy", []
 
+# Fix actions: check name → (label, shell command)
+# Commands run via  bash -c "<fix_cmd>"  in the popup.
+# Use pkexec for commands that need root (polkit auth dialog).
+# Use omarchy-launch-floating-terminal-with-presentation for interactive ones.
+_FIX_ACTIONS = {
+    "System Updates":   ("Update Now",    "omarchy-launch-floating-terminal-with-presentation omarchy-update"),
+    "Mirror Status":    ("Sync Mirrors",  "pkexec pacman -Sy"),
+    "Pacman Lock":      ("Remove Lock",   "pkexec sh -c 'rm /var/lib/pacman/db.lck'"),
+    "Memory":           ("Clear Cache",   "bash -c 'sync; echo 3 | pkexec tee /proc/sys/vm/drop_caches > /dev/null'"),
+    "Network":          ("Reconnect",     "bash -c 'nmcli networking off; sleep 1; nmcli networking on'"),
+    "Systemd Services": ("View Logs",     "xdg-terminal-exec journalctl -xe"),
+    "Disk Space":       ("Open Files",    "nautilus /"),
+}
+
 async def run_all():
     checks_meta = [
         ("Systemd Services",  check_systemd()),
@@ -224,7 +238,13 @@ async def run_all():
             status, msg, details = "UNKNOWN", str(result)[:40], []
         else:
             status, msg, details = result
-        checks.append({"name": name, "status": status, "message": msg, "details": details[:3]})
+
+        fix_label, fix_cmd = "", ""
+        if status not in ("OK",) and name in _FIX_ACTIONS:
+            fix_label, fix_cmd = _FIX_ACTIONS[name]
+
+        checks.append({"name": name, "status": status, "message": msg,
+                       "details": details[:3], "fix_label": fix_label, "fix_cmd": fix_cmd})
         if status == "CRITICAL":
             overall = "CRITICAL"
         elif status == "WARNING" and overall not in ("CRITICAL",):
