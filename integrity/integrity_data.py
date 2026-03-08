@@ -340,7 +340,7 @@ _FIX_ACTIONS = {
     "Systemd Services": ("View Logs",     "xdg-terminal-exec journalctl -xe"),
     "Disk Space":       ("Open Files",    "nautilus /"),
     "Initramfs":        ("Rebuild",       "omarchy-launch-floating-terminal-with-presentation bash -c 'sudo mkinitcpio -P; read -p \"Done — press enter\"'"),
-    "Build Environment":("Clean Cache",   "omarchy-launch-floating-terminal-with-presentation bash -c 'sudo pacman -Sc --noconfirm; read -p \"Done — press enter\"'"),
+    "Build Environment":("Clean Cache",   "omarchy-launch-floating-terminal-with-presentation bash -c 'sudo find /var/cache/pacman/pkg -maxdepth 1 -name \"download-*\" -delete 2>/dev/null; sudo pacman -Scc --noconfirm; read -p \"Done — press enter\"'"),
 }
 
 # ── Runner ────────────────────────────────────────────────────────────────────
