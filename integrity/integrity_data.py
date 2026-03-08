@@ -340,7 +340,7 @@ _FIX_ACTIONS = {
     "Systemd Services": ("View Logs",     "xdg-terminal-exec journalctl -xe"),
     "Disk Space":       ("Open Files",    "nautilus /"),
     "Initramfs":        ("Rebuild",       "omarchy-launch-floating-terminal-with-presentation bash -c 'sudo mkinitcpio -P; read -p \"Done — press enter\"'"),
-    "Build Environment":("Clean Cache",   "omarchy-launch-floating-terminal-with-presentation bash -c 'sudo paccache -rk2; read -p \"Done — press enter\"'"),
+    "Build Environment":("Clean Cache",   "omarchy-launch-floating-terminal-with-presentation bash -c 'sudo pacman -Sc --noconfirm; read -p \"Done — press enter\"'"),
 }
 
 # ── Runner ────────────────────────────────────────────────────────────────────
