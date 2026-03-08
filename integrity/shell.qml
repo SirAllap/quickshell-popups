@@ -23,6 +23,16 @@ ShellRoot {
             running: true
             onTriggered: grab.active = true
         }
+        // Re-arm focus grab after a fix command finishes
+        Connections {
+            target: popup
+            function onFixingCheckChanged() {
+                if (popup.fixingCheck === "") {
+                    grab.active = false
+                    grab.active = true
+                }
+            }
+        }
 
         Item {
             anchors.fill: parent
