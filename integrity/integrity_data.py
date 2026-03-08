@@ -389,6 +389,8 @@ async def run_all():
         elif status == "UNKNOWN" and overall == "OK":
             overall = "UNKNOWN"
 
+    _order = {"CRITICAL": 0, "WARNING": 1, "UNKNOWN": 2, "OK": 3}
+    checks.sort(key=lambda c: _order.get(c["status"], 4))
     return {"checks": checks, "overall": overall, "timestamp": datetime.now().strftime("%H:%M:%S")}
 
 print(json.dumps(asyncio.run(run_all())))
