@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Toggle the Quickshell network popup.
+# If already running, kill it. Otherwise, launch it.
+
+PID=$(pgrep -f "quickshell.*network" | head -n1)
+if [ -n "$PID" ]; then
+    kill "$PID"
+else
+    quickshell -p ~/.config/quickshell/network &
+fi

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+PID=$(pgrep -f "quickshell.*integrity" | head -n1)
+if [ -n "$PID" ]; then
+    kill "$PID"
+else
+    quickshell -p ~/.config/quickshell/integrity &
+fi
