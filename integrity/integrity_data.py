@@ -349,7 +349,6 @@ async def run_all():
     checks_meta = [
         ("Systemd Services",  check_systemd()),
         ("Disk Health",       check_disk_health()),
-        ("System Updates",    check_updates()),
         ("Security",          check_security()),
         ("System Errors",     check_system_errors()),
         ("Disk Space",        check_disk_space()),
