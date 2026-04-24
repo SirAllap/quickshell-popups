@@ -212,17 +212,40 @@ async def check_btrfs_scrub():
         return "WARNING", "BTRFS attention needed", issues
     return "OK", "BTRFS healthy", []
 
+_BENIGN_PACMAN_PATTERNS = (
+    "possibly missing firmware for module",
+    "consolefont: no font found",
+    "skipping verification of source file pgp signatures",
+    "using existing $srcdir",
+    "no font found in configuration",
+    "deprecated feature",
+    "unable to write to pipe",  # limine-update cosmetic
+)
+
+# Real pacman problems carry these tags — scriptlet/build noise [ALPM-SCRIPTLET]
+# is filtered out since it's just captured stdout/stderr from post-install hooks
+# (DKMS build errors, AUR build warnings) which don't indicate a pacman-level issue.
+_REAL_ERROR_TAGS = ("[PACMAN]", "[ALPM]")
+
 async def check_pacman_log():
     log_path = Path("/var/log/pacman.log")
     if not log_path.exists():
         return "UNKNOWN", "No pacman log", []
-    code, out = await run_cmd(["tail", "-n", "50", str(log_path)])
+    code, out = await run_cmd(["tail", "-n", "200", str(log_path)])
     if code != 0:
         return "UNKNOWN", "Cannot read log", []
     errors = []
     for line in out.splitlines():
-        if any(x in line.lower() for x in ["error", "failed", "warning:", "could not"]):
-            errors.append(line.split("] ", 1)[-1][:60])
+        low = line.lower()
+        # Only inspect lines from real pacman/ALPM contexts
+        if not any(tag in line for tag in _REAL_ERROR_TAGS):
+            continue
+        # Match 'error:' / 'warning:' as severity prefixes, not arbitrary substrings
+        if not any(x in low for x in ["error:", "warning:", " failed", "could not"]):
+            continue
+        if any(b in low for b in _BENIGN_PACMAN_PATTERNS):
+            continue
+        errors.append(line.split("] ", 1)[-1][:60])
     if Path("/var/lib/pacman/db.lck").exists():
         errors.append("Pacman database locked")
     if errors:
@@ -236,7 +259,12 @@ async def check_aur_updates():
     code, out = await run_cmd([helper, "-Qua"], timeout=15)
     if code != 0:
         return "UNKNOWN", f"{helper} query failed", []
-    count = len([l for l in out.splitlines() if l.strip()])
+    # Skip -git packages: pkgver() format vs upstream tag causes false-positives
+    pending = [
+        l for l in out.splitlines()
+        if l.strip() and not l.split()[0].endswith("-git")
+    ]
+    count = len(pending)
     if count > 20:
         return "WARNING", f"{count} AUR updates", []
     if count > 0:
@@ -262,10 +290,11 @@ async def check_systemd_timers():
 async def check_build_env():
     issues = []
     code, out = await run_cmd(["pacman", "-Qdtq"])
+    orphan_count = 0
     if code == 0 and out:
-        orphans = len(out.splitlines())
-        if orphans > 10:
-            issues.append(f"{orphans} orphaned packages")
+        orphan_count = len(out.splitlines())
+        if orphan_count > 5:
+            issues.append(f"{orphan_count} orphaned packages")
     cache_dir = Path("/var/cache/pacman/pkg")
     if cache_dir.exists():
         try:
@@ -296,6 +325,25 @@ async def check_mirror():
         return "OK", f"Synced {age_h:.1f}h ago", []
     except Exception:
         return "UNKNOWN", "Cannot check", []
+
+async def check_pacnew():
+    issues = []
+    # Fast: check stat-able paths under /etc without sudo where possible
+    try:
+        code, out = await run_cmd(
+            ["find", "/etc", "-xdev", "-name", "*.pacnew", "-o", "-name", "*.pacsave"],
+            timeout=3,
+        )
+        if code == 0:
+            for p in out.splitlines():
+                p = p.strip()
+                if p:
+                    issues.append(p)
+    except Exception:
+        pass
+    if issues:
+        return "WARNING", f"{len(issues)} pacnew/pacsave", issues[:5]
+    return "OK", "No pacnew files", []
 
 async def check_initramfs():
     running = os.uname().release
@@ -333,15 +381,17 @@ async def check_initramfs():
 _FIX_ACTIONS = {
     "System Updates":   ("Update Now",    "omarchy-launch-floating-terminal-with-presentation omarchy-update"),
     "Security":         ("Disable SSH",   "pkexec sh -c 'systemctl stop sshd; systemctl disable sshd'"),
-    "AUR Updates":      ("Update AUR",    "omarchy-launch-floating-terminal-with-presentation yay -Syu --aur"),
+    "AUR Updates":      ("Update AUR",    "omarchy-launch-floating-terminal-with-presentation yay -Sua"),
     "Mirror Status":    ("Sync Mirrors",  "pkexec pacman -Sy"),
     "Pacman Log":       ("Remove Lock",   "pkexec sh -c 'rm -f /var/lib/pacman/db.lck'"),
     "Memory":           ("Clear Cache",   "bash -c 'sync; echo 3 | pkexec tee /proc/sys/vm/drop_caches > /dev/null'"),
     "Network":          ("Reconnect",     "bash -c 'nmcli networking off; sleep 1; nmcli networking on'"),
     "Systemd Services": ("View Logs",     "xdg-terminal-exec journalctl -xe"),
     "Disk Space":       ("Open Files",    "nautilus /"),
-    "Initramfs":        ("Rebuild",       "omarchy-launch-floating-terminal-with-presentation bash -c 'sudo mkinitcpio -P; read -p \"Done — press enter\"'"),
-    "Build Environment":("Clean Cache",   "omarchy-launch-floating-terminal-with-presentation bash -c 'sudo find /var/cache/pacman/pkg -maxdepth 1 -name \"download-*\" -delete 2>/dev/null; yes | sudo pacman -Scc; read -p \"Done — press enter\"'"),
+    "Initramfs":        ("Rebuild UKI",   "omarchy-launch-floating-terminal-with-presentation bash -c 'sudo limine-mkinitcpio; read -p \"Done — press enter\"'"),
+    # Build Environment: prune old cache (keep last 2 versions) + remove orphans in one pass
+    "Build Environment":("Prune & Orphans", "omarchy-launch-floating-terminal-with-presentation bash -c 'set -e; echo \"Removing old cached versions (keep last 2)...\"; sudo paccache -rk2 || true; echo; orphans=$(pacman -Qtdq 2>/dev/null || true); if [ -n \"$orphans\" ]; then echo \"Removing orphans:\"; echo \"$orphans\"; echo \"$orphans\" | sudo pacman -Rns --noconfirm - || true; else echo \"No orphans.\"; fi; read -p \"Done — press enter\"'"),
+    "Pacnew Files":     ("Review (pacdiff)", "omarchy-launch-floating-terminal-with-presentation bash -c 'sudo DIFFPROG=\"nvim -d\" pacdiff; read -p \"Done — press enter\"'"),
 }
 
 # ── Runner ────────────────────────────────────────────────────────────────────
@@ -364,6 +414,7 @@ async def run_all():
         ("Build Environment", check_build_env()),
         ("Mirror Status",     check_mirror()),
         ("Initramfs",         check_initramfs()),
+        ("Pacnew Files",      check_pacnew()),
     ]
 
     results = await asyncio.gather(*[fn for _, fn in checks_meta], return_exceptions=True)
